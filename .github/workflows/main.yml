@@ -1,0 +1,48 @@
+name: Agent Task Executor
+
+on:
+  issues:
+    types: [assigned]
+
+jobs:
+  run_task_manager:
+    name: Execute Assigned Task
+    runs-on: ubuntu-latest
+    # Permissions needed by task_manager.py to:
+    # - Comment on and close issues in agent-tasks (current repo)
+    # - Commit files to agent-results and agent-memory (other repos)
+    permissions:
+      issues: write # For the current agent-tasks repo
+      contents: write # To allow committing to other repos (agent-results, agent-memory) via PAT
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # Match controller and architecture doc
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "requirements.txt not found. Installing common dependencies (requests)."
+            pip install requests
+          fi
+        # task_manager.py uses 'requests' and potentially 'sentence-transformers' via its GitHubHarvester or memory queuing.
+        # A proper requirements.txt in agent-tasks repo is recommended.
+        # For now, ensuring 'requests' is available.
+        # If sentence-transformers is used directly by task_manager.py (e.g., for simple memory queuing), it should be in requirements.txt.
+        # Based on the provided task_manager.py, it does not directly use sentence-transformers itself,
+        # but it calls GitHubHarvester which is now integrated.
+
+      - name: Run Task Manager Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }} # Use the PAT for cross-repo permissions
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          GITHUB_ACTOR: ${{ github.actor }} # For identifying who/what triggered the task
+        run: python task_manager.py
